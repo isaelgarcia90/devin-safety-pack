@@ -24,6 +24,7 @@
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #endif
 
+/* @req REQ-001 */
 DiagnosticShims diagnostic_init_shims(LogShim log,
         SendCanMessageShim send_can_message,
         SetTimerShim set_timer) {
@@ -35,6 +36,7 @@ DiagnosticShims diagnostic_init_shims(LogShim log,
     return shims;
 }
 
+/* @req REQ-005 */
 static void setup_receive_handle(DiagnosticRequestHandle* handle) {
     if(handle->request.arbitration_id == OBD2_FUNCTIONAL_BROADCAST_ID) {
         uint32_t response_id;
@@ -54,6 +56,7 @@ static void setup_receive_handle(DiagnosticRequestHandle* handle) {
     }
 }
 
+/* @req REQ-004 */
 static uint16_t autoset_pid_length(uint8_t mode, uint16_t pid,
         uint8_t pid_length) {
     if(pid_length == 0) {
@@ -68,6 +71,7 @@ static uint16_t autoset_pid_length(uint8_t mode, uint16_t pid,
     return pid_length;
 }
 
+/* @req REQ-002 */
 static void send_diagnostic_request(DiagnosticShims* shims,
         DiagnosticRequestHandle* handle) {
     uint8_t payload[MAX_DIAGNOSTIC_PAYLOAD_SIZE] = {0};
@@ -108,6 +112,7 @@ bool diagnostic_request_sent(DiagnosticRequestHandle* handle) {
     return handle->isotp_send_handle.completed;
 }
 
+/* @req REQ-002 */
 void start_diagnostic_request(DiagnosticShims* shims,
         DiagnosticRequestHandle* handle) {
     handle->success = false;
@@ -118,6 +123,7 @@ void start_diagnostic_request(DiagnosticShims* shims,
     }
 }
 
+/* @req REQ-003 */
 DiagnosticRequestHandle generate_diagnostic_request(DiagnosticShims* shims,
         DiagnosticRequest* request, DiagnosticResponseReceived callback) {
     DiagnosticRequestHandle handle = {
@@ -173,6 +179,7 @@ DiagnosticRequestHandle diagnostic_request_pid(DiagnosticShims* shims,
     return diagnostic_request(shims, &request, callback);
 }
 
+/* @req REQ-007 */
 static bool handle_negative_response(IsoTpMessage* message,
         DiagnosticResponse* response, DiagnosticShims* shims) {
     bool response_was_negative = false;
@@ -234,6 +241,8 @@ static bool handle_positive_response(DiagnosticRequestHandle* handle,
     return response_was_positive;
 }
 
+/* @req REQ-006 */
+/* @req REQ-008 */
 DiagnosticResponse diagnostic_receive_can_frame(DiagnosticShims* shims,
         DiagnosticRequestHandle* handle, const uint32_t arbitration_id,
         const uint8_t data[], const uint8_t size) {
@@ -301,6 +310,7 @@ int diagnostic_payload_to_integer(const DiagnosticResponse* response) {
             response->payload_length * CHAR_BIT);
 }
 
+/* @req REQ-009 */
 float diagnostic_decode_obd2_pid(const DiagnosticResponse* response) {
     // handles on the single number values, not the bit encoded ones
     switch(response->pid) {
@@ -401,6 +411,7 @@ void diagnostic_request_to_string(const DiagnosticRequest* request,
     }
 }
 
+/* @req REQ-010 */
 bool diagnostic_request_equals(const DiagnosticRequest* ours,
         const DiagnosticRequest* theirs) {
     bool equals = ours->arbitration_id == theirs->arbitration_id &&
