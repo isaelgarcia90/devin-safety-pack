@@ -1,0 +1,22 @@
+name: safety-gate
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  safety-gate:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: sudo apt-get update && sudo apt-get install -y cppcheck check
+      - name: Unit tests (demo/uds-c)
+        working-directory: demo/uds-c
+        run: make test
+      - name: Safety gate (traceability + MISRA)
+        run: python3 tools/safety_gate.py --project demo/uds-c --out safety-report
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: safety-report
+          path: safety-report

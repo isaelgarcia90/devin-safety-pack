@@ -1,0 +1,8 @@
+{
+  "name": "safety-pack",
+  "version": "0.1.0",
+  "description": "Functional-safety discipline for Devin on automotive C code: requirement traceability, MISRA C checks and auditor-ready PR evidence (ISO 26262 / ASPICE inspired).",
+  "author": { "name": "Isael Garcia" },
+  "license": "MIT",
+  "keywords": ["devin", "plugin", "automotive", "iso26262", "misra", "traceability", "safety"]
+}

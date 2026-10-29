@@ -1,0 +1,4 @@
+build/
+safety-report/
+*.gcda
+*.gcno

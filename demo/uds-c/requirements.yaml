@@ -1,0 +1,41 @@
+# Software requirements for the OpenXC uds-c library (written for the Safety Pack demo).
+- id: REQ-001
+  title: The library shall be initialised with platform shims (log, CAN send, timer)
+  asil: QM
+  source: Integration design
+- id: REQ-002
+  title: A diagnostic request shall be sent as a CAN frame on the requested arbitration ID
+  asil: B
+  source: ISO 14229-1 / ISO 15765-2
+- id: REQ-003
+  title: Outgoing CAN frames shall be padded to 8 bytes unless padding is disabled
+  asil: B
+  source: ISO 15765-2
+- id: REQ-004
+  title: The PID length shall be 1 byte for standard OBD-II modes and 2 bytes for enhanced modes
+  asil: B
+  source: ISO 14229-1
+- id: REQ-005
+  title: A functional broadcast request (0x7DF) shall accept responses from 0x7E8-0x7EF
+  asil: B
+  source: ISO 15765-4
+- id: REQ-006
+  title: Frames from an unexpected arbitration ID shall be ignored
+  asil: C
+  source: ISO 14229-1
+- id: REQ-007
+  title: A negative response (0x7F) shall be reported as failed with its NRC
+  asil: B
+  source: ISO 14229-1
+- id: REQ-008
+  title: Multi-frame (ISO-TP) responses shall be reassembled into one response
+  asil: B
+  source: ISO 15765-2
+- id: REQ-009
+  title: OBD-II PIDs shall be decoded to physical units (e.g. RPM 0x0C = (A*256+B)/4, coolant 0x05 = A-40)
+  asil: B
+  source: SAE J1979
+- id: REQ-010
+  title: Two requests shall be equal only if arbitration ID, mode and PID match
+  asil: A
+  source: Integration design
