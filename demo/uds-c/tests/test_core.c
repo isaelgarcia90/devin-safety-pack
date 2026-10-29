@@ -18,6 +18,7 @@ void response_received_handler(const DiagnosticResponse* response) {
     last_response_received = *response;
 }
 
+/* @verifies REQ-006 */
 START_TEST (test_receive_wrong_arb_id)
 {
     DiagnosticRequest request = {
@@ -35,6 +36,7 @@ START_TEST (test_receive_wrong_arb_id)
 }
 END_TEST
 
+/* @verifies REQ-002 */
 START_TEST (test_send_diag_request_with_payload)
 {
     DiagnosticRequest request = {
@@ -58,6 +60,7 @@ START_TEST (test_send_diag_request_with_payload)
 }
 END_TEST
 
+/* @verifies REQ-005 */
 START_TEST (test_send_functional_request)
 {
     DiagnosticRequest request = {
@@ -94,6 +97,7 @@ START_TEST (test_send_functional_request)
 }
 END_TEST
 
+/* @verifies REQ-003 */
 START_TEST (test_sent_message_no_padding)
 {
     DiagnosticRequest request = {
@@ -110,6 +114,7 @@ START_TEST (test_sent_message_no_padding)
 }
 END_TEST
 
+/* @verifies REQ-003 */
 START_TEST (test_sent_message_is_padded_by_default)
 {
     DiagnosticRequest request = {
@@ -125,6 +130,7 @@ START_TEST (test_sent_message_is_padded_by_default)
 }
 END_TEST
 
+/* @verifies REQ-003 */
 START_TEST (test_sent_message_is_padded)
 {
     DiagnosticRequest request = {
@@ -141,6 +147,7 @@ START_TEST (test_sent_message_is_padded)
 }
 END_TEST
 
+/* @verifies REQ-002 */
 START_TEST (test_send_diag_request)
 {
     DiagnosticRequest request = {
@@ -174,6 +181,7 @@ START_TEST (test_send_diag_request)
 }
 END_TEST
 
+/* @verifies REQ-002 */
 START_TEST (test_generate_then_send_request)
 {
     DiagnosticRequest request = {
@@ -225,6 +233,7 @@ START_TEST (test_generate_diag_request)
 }
 END_TEST
 
+/* @verifies REQ-004 */
 START_TEST (test_autoset_pid_length)
 {
     uint16_t arb_id = OBD2_MODE_POWERTRAIN_DIAGNOSTIC_REQUEST;
@@ -265,6 +274,7 @@ START_TEST (test_autoset_pid_length)
 }
 END_TEST
 
+/* @verifies REQ-004 */
 START_TEST (test_request_pid_standard)
 {
     uint16_t arb_id = OBD2_MODE_POWERTRAIN_DIAGNOSTIC_REQUEST;
@@ -287,6 +297,7 @@ START_TEST (test_request_pid_standard)
 }
 END_TEST
 
+/* @verifies REQ-004 */
 START_TEST (test_request_pid_enhanced)
 {
     uint16_t arb_id = 0x100;
@@ -309,6 +320,7 @@ START_TEST (test_request_pid_enhanced)
 }
 END_TEST
 
+/* @verifies REQ-006 */
 START_TEST (test_wrong_mode_response)
 {
     uint16_t arb_id = 0x100;
@@ -339,6 +351,7 @@ START_TEST (test_missing_pid)
 }
 END_TEST
 
+/* @verifies REQ-006 */
 START_TEST (test_wrong_pid_response)
 {
     uint16_t arb_id = 0x100;
@@ -378,6 +391,7 @@ START_TEST (test_wrong_pid_then_right_completes)
 }
 END_TEST
 
+/* @verifies REQ-007 */
 START_TEST (test_negative_response)
 {
     DiagnosticRequest request = {
@@ -405,6 +419,7 @@ START_TEST (test_negative_response)
 }
 END_TEST
 
+/* @verifies REQ-009 */
 START_TEST (test_payload_to_integer)
 {
     uint16_t arb_id = OBD2_MODE_POWERTRAIN_DIAGNOSTIC_REQUEST;
@@ -421,6 +436,11 @@ END_TEST
 
 #define STITCH_MULTIFRAME 1
 
+/* @verifies REQ-008
+ * Partial: checks ISO-TP flow control, mode/PID and completion of a 3-frame
+ * response. With STITCH_MULTIFRAME=1 the final payload holds only the first
+ * data byte plus the last consecutive frame, so the payload part of REQ-008
+ * ("reassembled into one response") is NOT met. Reported as a finding. */
 START_TEST (test_response_multi_frame)
 {
     DiagnosticRequest request = {
@@ -495,6 +515,139 @@ START_TEST (test_response_multi_frame)
 }
 END_TEST
 
+static void mock_log(const char* format, ...) {
+    (void)format;
+}
+
+static bool mock_send_can_alt(const uint32_t arbitration_id,
+        const uint8_t* data, const uint8_t size) {
+    (void)arbitration_id;
+    (void)data;
+    (void)size;
+    return true;
+}
+
+static bool mock_set_timer(uint16_t time_ms, void (*callback)) {
+    (void)time_ms;
+    (void)callback;
+    return true;
+}
+
+/* @verifies REQ-001 */
+START_TEST (test_init_shims)
+{
+    DiagnosticShims shims = diagnostic_init_shims(mock_log, mock_send_can_alt,
+            mock_set_timer);
+    fail_unless(shims.log == mock_log);
+    fail_unless(shims.send_can_message == mock_send_can_alt);
+    fail_unless(shims.set_timer == mock_set_timer);
+
+    shims = diagnostic_init_shims(NULL, mock_send_can_alt, NULL);
+    fail_unless(shims.log == NULL);
+    fail_unless(shims.send_can_message == mock_send_can_alt);
+    fail_unless(shims.set_timer == NULL);
+}
+END_TEST
+
+/* @verifies REQ-005 @verifies REQ-006 */
+START_TEST (test_functional_request_ignores_ids_outside_response_range)
+{
+    DiagnosticRequest request = {
+        arbitration_id: OBD2_FUNCTIONAL_BROADCAST_ID,
+        mode: OBD2_MODE_EMISSIONS_DTC_REQUEST,
+        no_frame_padding: true
+    };
+    DiagnosticRequestHandle handle = diagnostic_request(&SHIMS, &request,
+            response_received_handler);
+
+    const uint8_t can_data[] = {0x2, request.mode + 0x40, 0x23};
+    const uint16_t outside_ids[] = {OBD2_FUNCTIONAL_BROADCAST_ID,
+        OBD2_FUNCTIONAL_RESPONSE_START - 1,
+        OBD2_FUNCTIONAL_RESPONSE_START + OBD2_FUNCTIONAL_RESPONSE_COUNT};
+    for(size_t i = 0; i < sizeof(outside_ids) / sizeof(outside_ids[0]); i++) {
+        DiagnosticResponse response = diagnostic_receive_can_frame(&SHIMS,
+                &handle, outside_ids[i], can_data, sizeof(can_data));
+        fail_if(response.completed);
+        fail_if(handle.completed);
+        fail_if(last_response_was_received);
+    }
+
+    DiagnosticResponse response = diagnostic_receive_can_frame(&SHIMS, &handle,
+            OBD2_FUNCTIONAL_RESPONSE_START + OBD2_FUNCTIONAL_RESPONSE_COUNT - 1,
+            can_data, sizeof(can_data));
+    fail_unless(response.success);
+    fail_unless(handle.completed);
+    fail_unless(last_response_was_received);
+}
+END_TEST
+
+/* @verifies REQ-009 */
+START_TEST (test_decode_obd2_pid)
+{
+    DiagnosticResponse response = {
+        arbitration_id: 0x7e8,
+        mode: 0x1,
+        has_pid: true,
+        pid: 0x0c,
+        payload: {0x1a, 0xf8},
+        payload_length: 2
+    };
+    /* Engine RPM: (A*256+B)/4 = (26*256+248)/4 = 1726 rpm */
+    ck_assert(diagnostic_decode_obd2_pid(&response) == 1726.0f);
+
+    response.payload[0] = 0x0f;
+    response.payload[1] = 0xa1;
+    /* (15*256+161)/4 = 1000.25 rpm: fractional part must be kept */
+    ck_assert(diagnostic_decode_obd2_pid(&response) == 1000.25f);
+
+    response.pid = 0x05;
+    response.payload_length = 1;
+    response.payload[0] = 0x7b;
+    /* Coolant temperature: A-40 = 123-40 = 83 C */
+    ck_assert(diagnostic_decode_obd2_pid(&response) == 83.0f);
+
+    response.payload[0] = 0x00;
+    ck_assert(diagnostic_decode_obd2_pid(&response) == -40.0f);
+
+    response.payload[0] = 0xff;
+    ck_assert(diagnostic_decode_obd2_pid(&response) == 215.0f);
+}
+END_TEST
+
+/* @verifies REQ-010 */
+START_TEST (test_request_equals)
+{
+    DiagnosticRequest ours = {
+        arbitration_id: 0x7e0,
+        mode: 0x22,
+        has_pid: true,
+        pid: 0x1234
+    };
+    DiagnosticRequest theirs = ours;
+    fail_unless(diagnostic_request_equals(&ours, &theirs));
+
+    theirs.payload[0] = 0x55;
+    theirs.payload_length = 1;
+    fail_unless(diagnostic_request_equals(&ours, &theirs));
+
+    theirs = ours;
+    theirs.arbitration_id = 0x7e1;
+    fail_if(diagnostic_request_equals(&ours, &theirs));
+
+    theirs = ours;
+    theirs.mode = 0x1;
+    fail_if(diagnostic_request_equals(&ours, &theirs));
+
+    theirs = ours;
+    theirs.pid = 0x1235;
+    fail_if(diagnostic_request_equals(&ours, &theirs));
+
+    theirs = ours;
+    theirs.has_pid = false;
+    fail_if(diagnostic_request_equals(&ours, &theirs));
+}
+END_TEST
+
 Suite* testSuite(void) {
     Suite* s = suite_create("uds");
     TCase *tc_core = tcase_create("core");
@@ -518,6 +671,10 @@ Suite* testSuite(void) {
     tcase_add_test(tc_core, test_negative_response);
     tcase_add_test(tc_core, test_payload_to_integer);
     tcase_add_test(tc_core, test_response_multi_frame);
+    tcase_add_test(tc_core, test_init_shims);
+    tcase_add_test(tc_core, test_functional_request_ignores_ids_outside_response_range);
+    tcase_add_test(tc_core, test_decode_obd2_pid);
+    tcase_add_test(tc_core, test_request_equals);
 
     // TODO these are future work:
     // TODO test request MIL
