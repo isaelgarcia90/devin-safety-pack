@@ -16,7 +16,7 @@ The current prototype focuses on embedded C. Its automotive demo is inspired by 
 
 ## Hackathon presentation
 
-[**Open the hackathon presentation**](https://raw.githack.com/isaelgarcia90/devin-safety-pack/main/docs/HACKATHON_PRESENTATION_2026-10-29.html)
+[**Open the hackathon presentation**](https://isaelgarcia90.github.io/devin-safety-pack/HACKATHON_PRESENTATION_2026-10-29.html)
 
 The presentation keeps the original hackathon slides. Use its controls to switch between Spanish and English or between light and dark themes.
 
