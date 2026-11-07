@@ -18,6 +18,7 @@ void response_received_handler(const DiagnosticResponse* response) {
     last_response_received = *response;
 }
 
+/* @verifies REQ-006 */
 START_TEST (test_receive_wrong_arb_id)
 {
     DiagnosticRequest request = {
@@ -58,6 +59,7 @@ START_TEST (test_send_diag_request_with_payload)
 }
 END_TEST
 
+/* @verifies REQ-005 */
 START_TEST (test_send_functional_request)
 {
     DiagnosticRequest request = {
@@ -94,6 +96,7 @@ START_TEST (test_send_functional_request)
 }
 END_TEST
 
+/* @verifies REQ-003 */
 START_TEST (test_sent_message_no_padding)
 {
     DiagnosticRequest request = {
@@ -110,6 +113,7 @@ START_TEST (test_sent_message_no_padding)
 }
 END_TEST
 
+/* @verifies REQ-003 */
 START_TEST (test_sent_message_is_padded_by_default)
 {
     DiagnosticRequest request = {
@@ -141,6 +145,8 @@ START_TEST (test_sent_message_is_padded)
 }
 END_TEST
 
+/* @verifies REQ-001 */
+/* @verifies REQ-002 */
 START_TEST (test_send_diag_request)
 {
     DiagnosticRequest request = {
@@ -225,6 +231,7 @@ START_TEST (test_generate_diag_request)
 }
 END_TEST
 
+/* @verifies REQ-004 */
 START_TEST (test_autoset_pid_length)
 {
     uint16_t arb_id = OBD2_MODE_POWERTRAIN_DIAGNOSTIC_REQUEST;
@@ -378,6 +385,7 @@ START_TEST (test_wrong_pid_then_right_completes)
 }
 END_TEST
 
+/* @verifies REQ-007 */
 START_TEST (test_negative_response)
 {
     DiagnosticRequest request = {
@@ -421,6 +429,7 @@ END_TEST
 
 #define STITCH_MULTIFRAME 1
 
+/* @verifies REQ-008 */
 START_TEST (test_response_multi_frame)
 {
     DiagnosticRequest request = {
@@ -495,6 +504,55 @@ START_TEST (test_response_multi_frame)
 }
 END_TEST
 
+/* @verifies REQ-009 */
+START_TEST (test_decode_obd2_pid)
+{
+    DiagnosticResponse response = {
+        arbitration_id: 0x7e8,
+        mode: 0x1,
+        has_pid: true,
+        pid: 0xc,
+        payload: {0x1a, 0xf8},
+        payload_length: 2
+    };
+    ck_assert(diagnostic_decode_obd2_pid(&response) == 1726.0f);
+
+    response.pid = 0x5;
+    response.payload[0] = 0x7b;
+    response.payload_length = 1;
+    ck_assert(diagnostic_decode_obd2_pid(&response) == 83.0f);
+
+    response.pid = 0x11;
+    response.payload[0] = 0xff;
+    ck_assert(diagnostic_decode_obd2_pid(&response) == 100.0f);
+}
+END_TEST
+
+/* @verifies REQ-010 */
+START_TEST (test_request_equals)
+{
+    DiagnosticRequest ours = {
+        arbitration_id: 0x7df,
+        mode: 0x1,
+        has_pid: true,
+        pid: 0xc
+    };
+    DiagnosticRequest theirs = ours;
+    fail_unless(diagnostic_request_equals(&ours, &theirs));
+
+    theirs.pid = 0xd;
+    fail_if(diagnostic_request_equals(&ours, &theirs));
+
+    theirs = ours;
+    theirs.arbitration_id = 0x7e0;
+    fail_if(diagnostic_request_equals(&ours, &theirs));
+
+    theirs = ours;
+    theirs.mode = 0x22;
+    fail_if(diagnostic_request_equals(&ours, &theirs));
+}
+END_TEST
+
 Suite* testSuite(void) {
     Suite* s = suite_create("uds");
     TCase *tc_core = tcase_create("core");
@@ -518,6 +576,8 @@ Suite* testSuite(void) {
     tcase_add_test(tc_core, test_negative_response);
     tcase_add_test(tc_core, test_payload_to_integer);
     tcase_add_test(tc_core, test_response_multi_frame);
+    tcase_add_test(tc_core, test_decode_obd2_pid);
+    tcase_add_test(tc_core, test_request_equals);
 
     // TODO these are future work:
     // TODO test request MIL
