@@ -14,6 +14,14 @@ Safety Pack may also serve as a code-audit service. It would provide an extra re
 
 The current prototype focuses on embedded C. Its automotive demo is inspired by **ISO 26262**, the international standard for automotive functional safety. Applications in other industries have not yet been validated.
 
+## Hackathon presentation
+
+[**Open the hackathon presentation**](https://raw.githack.com/isaelgarcia90/devin-safety-pack/main/docs/HACKATHON_PRESENTATION_2026-10-29.html)
+
+The presentation keeps the original hackathon slides. Use its controls to switch between Spanish and English or between light and dark themes.
+
+Source file: [`docs/HACKATHON_PRESENTATION_2026-10-29.html`](docs/HACKATHON_PRESENTATION_2026-10-29.html)
+
 ## Quickstart: run the demo in Devin Desktop
 
 This is the happy path: install the plugin, then send one message to run the demo. **You do not need to start a session on the web or send a separate message for each skill.**
