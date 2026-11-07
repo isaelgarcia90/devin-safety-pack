@@ -2,10 +2,15 @@
 #include <check.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <stdbool.h>
+#include <math.h>
 
 extern bool can_frame_was_sent;
 extern void setup();
+extern void debug(const char* format, ...);
+extern bool mock_send_can(const uint32_t arbitration_id, const uint8_t* data,
+        const uint8_t size);
 extern bool last_response_was_received;
 extern DiagnosticResponse last_response_received;
 extern DiagnosticShims SHIMS;
@@ -18,6 +23,7 @@ void response_received_handler(const DiagnosticResponse* response) {
     last_response_received = *response;
 }
 
+/* @verifies REQ-006 */
 START_TEST (test_receive_wrong_arb_id)
 {
     DiagnosticRequest request = {
@@ -35,6 +41,7 @@ START_TEST (test_receive_wrong_arb_id)
 }
 END_TEST
 
+/* @verifies REQ-002 */
 START_TEST (test_send_diag_request_with_payload)
 {
     DiagnosticRequest request = {
@@ -58,6 +65,7 @@ START_TEST (test_send_diag_request_with_payload)
 }
 END_TEST
 
+/* @verifies REQ-005 */
 START_TEST (test_send_functional_request)
 {
     DiagnosticRequest request = {
@@ -94,6 +102,7 @@ START_TEST (test_send_functional_request)
 }
 END_TEST
 
+/* @verifies REQ-003 */
 START_TEST (test_sent_message_no_padding)
 {
     DiagnosticRequest request = {
@@ -110,6 +119,7 @@ START_TEST (test_sent_message_no_padding)
 }
 END_TEST
 
+/* @verifies REQ-003 */
 START_TEST (test_sent_message_is_padded_by_default)
 {
     DiagnosticRequest request = {
@@ -125,6 +135,7 @@ START_TEST (test_sent_message_is_padded_by_default)
 }
 END_TEST
 
+/* @verifies REQ-003 */
 START_TEST (test_sent_message_is_padded)
 {
     DiagnosticRequest request = {
@@ -141,6 +152,7 @@ START_TEST (test_sent_message_is_padded)
 }
 END_TEST
 
+/* @verifies REQ-002 */
 START_TEST (test_send_diag_request)
 {
     DiagnosticRequest request = {
@@ -174,6 +186,7 @@ START_TEST (test_send_diag_request)
 }
 END_TEST
 
+/* @verifies REQ-002 */
 START_TEST (test_generate_then_send_request)
 {
     DiagnosticRequest request = {
@@ -225,6 +238,7 @@ START_TEST (test_generate_diag_request)
 }
 END_TEST
 
+/* @verifies REQ-004 */
 START_TEST (test_autoset_pid_length)
 {
     uint16_t arb_id = OBD2_MODE_POWERTRAIN_DIAGNOSTIC_REQUEST;
@@ -265,6 +279,7 @@ START_TEST (test_autoset_pid_length)
 }
 END_TEST
 
+/* @verifies REQ-004 */
 START_TEST (test_request_pid_standard)
 {
     uint16_t arb_id = OBD2_MODE_POWERTRAIN_DIAGNOSTIC_REQUEST;
@@ -287,6 +302,7 @@ START_TEST (test_request_pid_standard)
 }
 END_TEST
 
+/* @verifies REQ-004 */
 START_TEST (test_request_pid_enhanced)
 {
     uint16_t arb_id = 0x100;
@@ -309,6 +325,7 @@ START_TEST (test_request_pid_enhanced)
 }
 END_TEST
 
+/* @verifies REQ-006 */
 START_TEST (test_wrong_mode_response)
 {
     uint16_t arb_id = 0x100;
@@ -378,6 +395,7 @@ START_TEST (test_wrong_pid_then_right_completes)
 }
 END_TEST
 
+/* @verifies REQ-007 */
 START_TEST (test_negative_response)
 {
     DiagnosticRequest request = {
@@ -405,6 +423,7 @@ START_TEST (test_negative_response)
 }
 END_TEST
 
+/* @verifies REQ-009 */
 START_TEST (test_payload_to_integer)
 {
     uint16_t arb_id = OBD2_MODE_POWERTRAIN_DIAGNOSTIC_REQUEST;
@@ -421,6 +440,7 @@ END_TEST
 
 #define STITCH_MULTIFRAME 1
 
+/* @verifies REQ-008 */
 START_TEST (test_response_multi_frame)
 {
     DiagnosticRequest request = {
@@ -495,6 +515,158 @@ START_TEST (test_response_multi_frame)
 }
 END_TEST
 
+/* @verifies REQ-001 */
+START_TEST (test_init_shims)
+{
+    DiagnosticShims shims = diagnostic_init_shims(debug, mock_send_can, NULL);
+    fail_unless(shims.log == debug);
+    fail_unless(shims.send_can_message == mock_send_can);
+    fail_unless(shims.set_timer == NULL);
+
+    DiagnosticRequest request = {
+        .arbitration_id = 0x100,
+        .mode = OBD2_MODE_EMISSIONS_DTC_REQUEST
+    };
+    fail_if(can_frame_was_sent);
+    diagnostic_request(&shims, &request, response_received_handler);
+    fail_unless(can_frame_was_sent);
+}
+END_TEST
+
+static void assert_decoded(uint16_t pid, const uint8_t* payload,
+        uint8_t payload_length, float expected) {
+    DiagnosticResponse response = {
+        .success = true,
+        .completed = true,
+        .mode = OBD2_MODE_POWERTRAIN_DIAGNOSTIC_REQUEST,
+        .has_pid = true,
+        .pid = pid,
+        .payload_length = payload_length
+    };
+    memcpy(response.payload, payload, payload_length);
+    float decoded = diagnostic_decode_obd2_pid(&response);
+    ck_assert_msg(fabsf(decoded - expected) < 0.001f,
+            "PID 0x%x decoded to %f, expected %f", pid, decoded, expected);
+}
+
+/* @verifies REQ-009 */
+START_TEST (test_decode_obd2_pid)
+{
+    const uint8_t rpm[] = {0x1a, 0xf8};
+    assert_decoded(0xc, rpm, sizeof(rpm), 1726.0f);
+    const uint8_t coolant[] = {0x7b};
+    assert_decoded(0x5, coolant, sizeof(coolant), 83.0f);
+    const uint8_t coolant_min[] = {0x00};
+    assert_decoded(0x5, coolant_min, sizeof(coolant_min), -40.0f);
+    const uint8_t speed[] = {0x50};
+    assert_decoded(0xd, speed, sizeof(speed), 80.0f);
+    const uint8_t load[] = {0xff};
+    assert_decoded(0x4, load, sizeof(load), 100.0f);
+    const uint8_t fuel_pressure[] = {0x20};
+    assert_decoded(0xa, fuel_pressure, sizeof(fuel_pressure), 96.0f);
+    const uint8_t maf[] = {0x01, 0x2c};
+    assert_decoded(0x10, maf, sizeof(maf), 3.0f);
+    const uint8_t torque[] = {0x7d};
+    assert_decoded(0x62, torque, sizeof(torque), 0.0f);
+    const uint8_t raw[] = {0x12, 0x34};
+    assert_decoded(0x1f, raw, sizeof(raw), 4660.0f);
+}
+END_TEST
+
+/* @verifies REQ-010 */
+START_TEST (test_request_equals)
+{
+    DiagnosticRequest ours = {
+        .arbitration_id = 0x7e0,
+        .mode = OBD2_MODE_POWERTRAIN_DIAGNOSTIC_REQUEST,
+        .has_pid = true,
+        .pid = 0xc
+    };
+    DiagnosticRequest theirs = ours;
+    fail_unless(diagnostic_request_equals(&ours, &theirs));
+
+    theirs.arbitration_id = 0x7e1;
+    fail_if(diagnostic_request_equals(&ours, &theirs));
+
+    theirs = ours;
+    theirs.mode = OBD2_MODE_ENHANCED_DIAGNOSTIC_REQUEST;
+    fail_if(diagnostic_request_equals(&ours, &theirs));
+
+    theirs = ours;
+    theirs.pid = 0xd;
+    fail_if(diagnostic_request_equals(&ours, &theirs));
+}
+END_TEST
+
+/* With STITCH_MULTIFRAME=1 the library hands each ISO-TP frame up as a
+ * partial response; the full message is only recoverable by the client.
+ * This test documents that contract and the bytes it yields. It does NOT
+ * show that the library itself returns one reassembled response (see the
+ * REQ-008 finding in the Safety Impact Analysis). */
+/* @verifies REQ-008 */
+START_TEST (test_multi_frame_partials_cover_full_message)
+{
+    DiagnosticRequest request = {
+        .arbitration_id = 0x100,
+        .mode = OBD2_MODE_VEHICLE_INFORMATION,
+        .has_pid = true,
+        .pid = 0x2
+    };
+    DiagnosticRequestHandle handle = diagnostic_request(&SHIMS, &request,
+            response_received_handler);
+
+    const uint8_t frames[3][8] = {
+        {0x10, 0x14, 0x9 + 0x40, 0x2, 0x1, 0x31, 0x46, 0x4d},
+        {0x21, 0x43, 0x55, 0x39, 0x4a, 0x39, 0x34, 0x48},
+        {0x22, 0x55, 0x41, 0x30, 0x34, 0x35, 0x32, 0x34}
+    };
+    const uint8_t expected[] = {0x01, 0x31, 0x46, 0x4d, 0x43, 0x55, 0x39,
+        0x4a, 0x39, 0x34, 0x48, 0x55, 0x41, 0x30, 0x34, 0x35, 0x32, 0x34};
+    uint8_t stitched[sizeof(expected)] = {0};
+    size_t stitched_length = 0;
+
+    DiagnosticResponse response = diagnostic_receive_can_frame(&SHIMS,
+            &handle, request.arbitration_id + 0x8, frames[0], 8);
+    fail_if(response.completed);
+    fail_unless(response.multi_frame);
+    ck_assert_int_eq(response.payload_length, 6);
+    ck_assert_int_eq(response.payload[0], 0x9 + 0x40);
+    ck_assert_int_eq(response.payload[1], 0x2);
+    memcpy(&stitched[stitched_length], &response.payload[2],
+            response.payload_length - 2);
+    stitched_length += response.payload_length - 2;
+
+    response = diagnostic_receive_can_frame(&SHIMS, &handle,
+            request.arbitration_id + 0x8, frames[1], 8);
+    fail_if(response.completed);
+    fail_unless(response.multi_frame);
+    ck_assert_int_eq(response.payload_length, 7);
+    memcpy(&stitched[stitched_length], response.payload,
+            response.payload_length);
+    stitched_length += response.payload_length;
+
+    response = diagnostic_receive_can_frame(&SHIMS, &handle,
+            request.arbitration_id + 0x8, frames[2], 8);
+    fail_unless(response.completed);
+    fail_unless(response.success);
+    fail_unless(response.multi_frame);
+    fail_unless(handle.completed);
+    ck_assert_int_eq(response.mode, OBD2_MODE_VEHICLE_INFORMATION);
+    ck_assert_int_eq(response.pid, 0x2);
+    // final payload = repeated first data byte of the header + last frame
+    ck_assert_int_eq(response.payload_length, 8);
+    ck_assert_int_eq(response.payload[0], expected[0]);
+    memcpy(&stitched[stitched_length], &response.payload[1],
+            response.payload_length - 1);
+    stitched_length += response.payload_length - 1;
+
+    ck_assert_int_eq(stitched_length, sizeof(expected));
+    ck_assert_int_eq(memcmp(stitched, expected, sizeof(expected)), 0);
+    // the library-level response alone does not hold the whole message
+    fail_if(response.payload_length == sizeof(expected));
+}
+END_TEST
+
 Suite* testSuite(void) {
     Suite* s = suite_create("uds");
     TCase *tc_core = tcase_create("core");
@@ -518,6 +690,10 @@ Suite* testSuite(void) {
     tcase_add_test(tc_core, test_negative_response);
     tcase_add_test(tc_core, test_payload_to_integer);
     tcase_add_test(tc_core, test_response_multi_frame);
+    tcase_add_test(tc_core, test_init_shims);
+    tcase_add_test(tc_core, test_decode_obd2_pid);
+    tcase_add_test(tc_core, test_request_equals);
+    tcase_add_test(tc_core, test_multi_frame_partials_cover_full_message);
 
     // TODO these are future work:
     // TODO test request MIL
