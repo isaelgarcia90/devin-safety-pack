@@ -15,6 +15,8 @@
 #define PID_BYTE_INDEX 1
 #define NEGATIVE_RESPONSE_MODE_INDEX 1
 #define NEGATIVE_RESPONSE_NRC_INDEX 2
+#define PID_BIT_OFFSET 8U
+#define PID_BIT_LENGTH_ENHANCED 16U
 
 #ifndef MAX
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
@@ -24,17 +26,19 @@
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #endif
 
+/* @req REQ-001 */
 DiagnosticShims diagnostic_init_shims(LogShim log,
         SendCanMessageShim send_can_message,
         SetTimerShim set_timer) {
     DiagnosticShims shims = {
-        log: log,
-        send_can_message: send_can_message,
-        set_timer: set_timer
+        .log = log,
+        .send_can_message = send_can_message,
+        .set_timer = set_timer
     };
     return shims;
 }
 
+/* @req REQ-005 @req REQ-006 */
 static void setup_receive_handle(DiagnosticRequestHandle* handle) {
     if(handle->request.arbitration_id == OBD2_FUNCTIONAL_BROADCAST_ID) {
         uint32_t response_id;
@@ -54,34 +58,37 @@ static void setup_receive_handle(DiagnosticRequestHandle* handle) {
     }
 }
 
+/* @req REQ-004 */
 static uint16_t autoset_pid_length(uint8_t mode, uint16_t pid,
         uint8_t pid_length) {
-    if(pid_length == 0) {
-        if(mode <= 0xa || mode == 0x3e ) {
-            pid_length = 1;
-        } else if(pid > 0xffff || ((pid & 0xFF00) > 0x0)) {
-            pid_length = 2;
+    uint16_t result = pid_length;
+    if(pid_length == 0U) {
+        if((mode <= 0xaU) || (mode == 0x3eU)) {
+            result = 1U;
+        } else if((pid & 0xFF00U) > 0U) {
+            result = 2U;
         } else {
-            pid_length = 1;
+            result = 1U;
         }
     }
-    return pid_length;
+    return result;
 }
 
+/* @req REQ-002 @req REQ-003 @req REQ-004 */
 static void send_diagnostic_request(DiagnosticShims* shims,
         DiagnosticRequestHandle* handle) {
     uint8_t payload[MAX_DIAGNOSTIC_PAYLOAD_SIZE] = {0};
     payload[MODE_BYTE_INDEX] = handle->request.mode;
-    if(handle->request.has_pid) {
+    if(handle->request.has_pid == true) {
         handle->request.pid_length = autoset_pid_length(handle->request.mode,
                 handle->request.pid, handle->request.pid_length);
-        set_bitfield(handle->request.pid, PID_BYTE_INDEX * CHAR_BIT,
+        set_bitfield(handle->request.pid, PID_BIT_OFFSET,
                 handle->request.pid_length * CHAR_BIT, payload,
                 sizeof(payload));
     }
 
     if(handle->request.payload_length > 0) {
-        memcpy(&payload[PID_BYTE_INDEX + handle->request.pid_length],
+        (void)memcpy(&payload[PID_BYTE_INDEX + handle->request.pid_length],
                 handle->request.payload, handle->request.payload_length);
     }
 
@@ -101,6 +108,8 @@ static void send_diagnostic_request(DiagnosticShims* shims,
         diagnostic_request_to_string(&handle->request, request_string,
                 sizeof(request_string));
         shims->log("Sending diagnostic request: %s", request_string);
+    } else {
+        /* No log shim configured: nothing to report. */
     }
 }
 
@@ -108,6 +117,7 @@ bool diagnostic_request_sent(DiagnosticRequestHandle* handle) {
     return handle->isotp_send_handle.completed;
 }
 
+/* @req REQ-002 */
 void start_diagnostic_request(DiagnosticShims* shims,
         DiagnosticRequestHandle* handle) {
     handle->success = false;
@@ -118,13 +128,14 @@ void start_diagnostic_request(DiagnosticShims* shims,
     }
 }
 
+/* @req REQ-001 @req REQ-003 */
 DiagnosticRequestHandle generate_diagnostic_request(DiagnosticShims* shims,
         DiagnosticRequest* request, DiagnosticResponseReceived callback) {
     DiagnosticRequestHandle handle = {
-        request: *request,
-        callback: callback,
-        success: false,
-        completed: false
+        .request = *request,
+        .callback = callback,
+        .success = false,
+        .completed = false
     };
 
     handle.isotp_shims = isotp_init_shims(shims->log,
@@ -152,6 +163,7 @@ DiagnosticRequestHandle generate_diagnostic_request(DiagnosticShims* shims,
     //
 }
 
+/* @req REQ-002 */
 DiagnosticRequestHandle diagnostic_request(DiagnosticShims* shims,
         DiagnosticRequest* request, DiagnosticResponseReceived callback) {
     DiagnosticRequestHandle handle = generate_diagnostic_request(
@@ -160,21 +172,23 @@ DiagnosticRequestHandle diagnostic_request(DiagnosticShims* shims,
     return handle;
 }
 
+/* @req REQ-004 */
 DiagnosticRequestHandle diagnostic_request_pid(DiagnosticShims* shims,
         DiagnosticPidRequestType pid_request_type, uint32_t arbitration_id,
         uint16_t pid, DiagnosticResponseReceived callback) {
     DiagnosticRequest request = {
-        arbitration_id: arbitration_id,
-        mode: pid_request_type == DIAGNOSTIC_STANDARD_PID ? 0x1 : 0x22,
-        has_pid: true,
-        pid: pid
+        .arbitration_id = arbitration_id,
+        .mode = (pid_request_type == DIAGNOSTIC_STANDARD_PID) ? 0x1U : 0x22U,
+        .has_pid = true,
+        .pid = pid
     };
 
     return diagnostic_request(shims, &request, callback);
 }
 
+/* @req REQ-007 */
 static bool handle_negative_response(IsoTpMessage* message,
-        DiagnosticResponse* response, DiagnosticShims* shims) {
+        DiagnosticResponse* response) {
     bool response_was_negative = false;
     if(response->mode == NEGATIVE_RESPONSE_MODE) {
         response_was_negative = true;
@@ -193,21 +207,21 @@ static bool handle_negative_response(IsoTpMessage* message,
     return response_was_negative;
 }
 
+/* @req REQ-006 @req REQ-008 */
 static bool handle_positive_response(DiagnosticRequestHandle* handle,
-        IsoTpMessage* message, DiagnosticResponse* response,
-        DiagnosticShims* shims) {
+        IsoTpMessage* message, DiagnosticResponse* response) {
     bool response_was_positive = false;
-    if(response->mode == handle->request.mode + MODE_RESPONSE_OFFSET) {
+    if(response->mode == (handle->request.mode + MODE_RESPONSE_OFFSET)) {
         response_was_positive = true;
         // hide the "response" version of the mode from the user
         // if it matched
         response->mode = handle->request.mode;
         response->has_pid = false;
-        if(handle->request.has_pid && message->size > 1) {
+        if(handle->request.has_pid && (message->size > 1U)) {
             response->has_pid = true;
-            if(handle->request.pid_length == 2) {
+            if(handle->request.pid_length == 2U) {
                 response->pid = get_bitfield(message->payload, message->size,
-                        PID_BYTE_INDEX * CHAR_BIT, sizeof(uint16_t) * CHAR_BIT);
+                        PID_BIT_OFFSET, PID_BIT_LENGTH_ENHANCED);
             } else {
                 response->pid = message->payload[PID_BYTE_INDEX];
             }
@@ -215,7 +229,7 @@ static bool handle_positive_response(DiagnosticRequestHandle* handle,
         }
 
         if((!handle->request.has_pid && !response->has_pid)
-                || response->pid == handle->request.pid) {
+                || (response->pid == handle->request.pid)) {
             response->success = true;
             response->completed = true;
 
@@ -224,7 +238,7 @@ static bool handle_positive_response(DiagnosticRequestHandle* handle,
             response->payload_length = MIN(MAX_UDS_RESPONSE_PAYLOAD_LENGTH,
                                            response->payload_length);
             if(response->payload_length > 0) {
-                memcpy(response->payload, &message->payload[payload_index], 
+                (void)memcpy(response->payload, &message->payload[payload_index],
                         response->payload_length);
             }
         } else {
@@ -234,15 +248,16 @@ static bool handle_positive_response(DiagnosticRequestHandle* handle,
     return response_was_positive;
 }
 
+/* @req REQ-005 @req REQ-006 @req REQ-007 @req REQ-008 */
 DiagnosticResponse diagnostic_receive_can_frame(DiagnosticShims* shims,
         DiagnosticRequestHandle* handle, const uint32_t arbitration_id,
         const uint8_t data[], const uint8_t size) {
 
     DiagnosticResponse response = {     // Defined in uds_types.h
-        arbitration_id: arbitration_id,
-        multi_frame: false,
-        success: false,
-        completed: false
+        .arbitration_id = arbitration_id,
+        .multi_frame = false,
+        .success = false,
+        .completed = false
     };
 
     if(!handle->isotp_send_handle.completed) {
@@ -250,17 +265,19 @@ DiagnosticResponse diagnostic_receive_can_frame(DiagnosticShims* shims,
                 &handle->isotp_send_handle, arbitration_id, data, size);
     } else {
         uint8_t i;
-        for(i = 0; i < handle->isotp_receive_handle_count; ++i) {
+        bool frame_consumed = false;
+        for(i = 0; (i < handle->isotp_receive_handle_count) && !frame_consumed;
+                ++i) {
             IsoTpMessage message = isotp_continue_receive(&handle->isotp_shims,
                     &handle->isotp_receive_handles[i], arbitration_id, data,
                     size);
             response.multi_frame = message.multi_frame;
-            if(message.completed) {
+            if(message.completed == true) {
                 if(message.size > 0) {
                     response.mode = message.payload[0];
-                    if(handle_negative_response(&message, &response, shims) ||
+                    if(handle_negative_response(&message, &response) ||
                             handle_positive_response(handle, &message,
-                                &response, shims)) {
+                                &response)) {
                         if(shims->log != NULL) {
                             char response_string[128] = {0};
                             diagnostic_response_to_string(&response,
@@ -279,41 +296,49 @@ DiagnosticResponse diagnostic_receive_can_frame(DiagnosticShims* shims,
                     }
                 }
 
-                if(handle->completed && handle->callback != NULL) {
+                if(handle->completed && (handle->callback != NULL)) {
                     handle->callback(&response);
                 }
 
-                break;
+                frame_consumed = true;
             } else {  // NEW 4/25/2020- Copy partial message into the response buffer
-                memcpy(response.payload, message.payload, message.size);
+                (void)memcpy(response.payload, message.payload, message.size);
                 response.payload_length = message.size;
                 response.multi_frame = true;
-                if (message.size != 0)
-                    break;
+                if(message.size != 0U) {
+                    frame_consumed = true;
+                }
             }
         }
     }
     return response;
 }
 
+/* @req REQ-009 */
 int diagnostic_payload_to_integer(const DiagnosticResponse* response) {
     return get_bitfield(response->payload, response->payload_length, 0,
             response->payload_length * CHAR_BIT);
 }
 
+/* @req REQ-009 */
 float diagnostic_decode_obd2_pid(const DiagnosticResponse* response) {
+    float value;
     // handles on the single number values, not the bit encoded ones
     switch(response->pid) {
         case 0xa:
-            return response->payload[0] * 3;
+            value = response->payload[0] * 3;
+            break;
         case 0xc:
-            return (response->payload[0] * 256 + response->payload[1]) / 4.0;
+            value = ((response->payload[0] * 256) + response->payload[1]) / 4.0;
+            break;
         case 0xd:
         case 0x33:
         case 0xb:
-            return response->payload[0];
+            value = response->payload[0];
+            break;
         case 0x10:
-            return (response->payload[0] * 256 + response->payload[1]) / 100.0;
+            value = ((response->payload[0] * 256) + response->payload[1]) / 100.0;
+            break;
         case 0x11:
         case 0x2f:
         case 0x45:
@@ -321,17 +346,22 @@ float diagnostic_decode_obd2_pid(const DiagnosticResponse* response) {
         case 0x52:
         case 0x5a:
         case 0x4:
-            return response->payload[0] * 100.0 / 255.0;
+            value = response->payload[0] * 100.0 / 255.0;
+            break;
         case 0x46:
         case 0x5c:
         case 0xf:
         case 0x5:
-            return response->payload[0] - 40;
+            value = response->payload[0] - 40;
+            break;
         case 0x62:
-            return response->payload[0] - 125;
+            value = response->payload[0] - 125;
+            break;
         default:
-            return diagnostic_payload_to_integer(response);
+            value = diagnostic_payload_to_integer(response);
+            break;
     }
+    return value;
 }
 
 void diagnostic_response_to_string(const DiagnosticResponse* response,
@@ -401,10 +431,11 @@ void diagnostic_request_to_string(const DiagnosticRequest* request,
     }
 }
 
+/* @req REQ-010 */
 bool diagnostic_request_equals(const DiagnosticRequest* ours,
         const DiagnosticRequest* theirs) {
-    bool equals = ours->arbitration_id == theirs->arbitration_id &&
-        ours->mode == theirs->mode;
+    bool equals = (ours->arbitration_id == theirs->arbitration_id) &&
+        (ours->mode == theirs->mode);
     equals &= ours->has_pid == theirs->has_pid;
     equals &= ours->pid == theirs->pid;
     return equals;

@@ -1,4 +1,14 @@
 # MISRA C:2012 deviation records
 
+Scope: `src/` as analysed by `tools/safety_gate.py` (cppcheck 2.7 `--addon=misra`, as on the CI runner `ubuntu-22.04`).
+Baseline 72 findings; 36 fixed in code; 36 remaining are covered by the records below.
+
 | Rule | Justification | Risk | Mitigation |
 |---|---|---|---|
+| misra-c2012-8.4 | Tool configuration artefact. Every external function in `uds.c`/`extras.c` has a compatible prototype in `uds.h`/`extras.h`, but the gate runs cppcheck without `-I` include paths, so the declarations are not visible to the checker. Re-running with `-Isrc -Ideps/isotp-c/src -Ideps/isotp-c/deps/bitfield-c/src` gives 0 findings for this rule. (13 findings) | Low: a missing or incompatible prototype would also be caught by the compiler (`-Wall -Werror`) when tests include the headers. | Add include paths to the gate's cppcheck call (follow-up), then remove this record. |
+| misra-c2012-2.7 | Unused parameters in the unimplemented "future work" stubs of `src/uds/extras.c` (MIL, VIN, DTC, clear DTC, PID enumeration). Their signatures are public API in `extras.h`. No requirement in `requirements.yaml` covers these functions, so per AGENTS.md they are not modified. (10 findings) | Low: stubs return an empty handle / `false`; no CAN traffic is produced. Risk is a caller that assumes the stub works. | Requirements must be written before these functions are implemented or changed; reported as a finding in the PR. |
+| misra-c2012-10.4 | `diagnostic_response_to_string` / `diagnostic_request_to_string`: mixed signed/unsigned arithmetic on `snprintf` return value and buffer length. Debug-logging helpers with no covering requirement, left unmodified per AGENTS.md rule 1. (5 findings) | Medium: if `snprintf` truncates, `destination_length - bytes_used` can wrap and a later `snprintf` may write past the buffer. Only reached when a log shim is configured. | Write a requirement for diagnostic logging, then rework both helpers (track remaining space as `size_t`, clamp on truncation). Reported as a finding. |
+| misra-c2012-14.4 | Same two logging helpers: `if(response->has_pid)` / `if(request->has_pid)`. The operand is `bool`, but cppcheck cannot see the type without include paths (same root cause as 8.4). (2 findings) | Low: operand is essentially Boolean. | Fix together with the logging helpers / include paths. |
+| misra-c2012-18.4 | Same two logging helpers: `destination + bytes_used` pointer arithmetic. (3 findings) | Medium: see 10.4, out-of-bounds write if the offset exceeds the buffer. | As for 10.4. |
+| misra-c2012-17.7 | Same two logging helpers: last `snprintf` return value is discarded. (2 findings) | Low: the result only reports truncation of a debug string. | As for 10.4. |
+| misra-c2012-10.3 | `diagnostic_request_to_string`: `int remaining_space = destination_length - bytes_used` (size_t to int). (1 finding) | Medium: see 10.4. | As for 10.4. |
